@@ -213,7 +213,7 @@ class TestRedisColdStorage(unittest.TestCase):
         self.assertFalse(a.exists())
         a = Foo.get('a')
         self.assertFalse(a.exists())
-        self.assertEqual(default_redis_connection.get('FOO{a}__xx'), '1')
+        self.assertEqual(default_redis_connection.get('FOO{a}__xx'), b'1')
 
         b = Foo.new(id='b')
         Foo.save(b)
@@ -232,7 +232,7 @@ class TestRedisColdStorage(unittest.TestCase):
     def test_missing_to_save_freeze(self):
         a = Foo.get('a')
         self.assertFalse(a.exists())
-        self.assertEqual(default_redis_connection.get('FOO{a}__xx'), '1')
+        self.assertEqual(default_redis_connection.get('FOO{a}__xx'), b'1')
         Foo.save(a)
         Foo.freeze('a')
         res = Foo.storage('a').ttl()

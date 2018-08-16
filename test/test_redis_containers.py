@@ -32,7 +32,7 @@ class ListTestCase(unittest.TestCase):
         alpha.append('a')
         alpha.append('b')
         alpha.append('c', 'd')
-        alpha.append(['e', 'f'])
+        alpha.append(*['e', 'f'])
 
         self.assertEqual(['a', 'b', 'c', 'd', 'e', 'f'], alpha.all())
 
@@ -67,7 +67,7 @@ class ListTestCase(unittest.TestCase):
         # push and pop
         num.push('4')
         num.push('a', 'b')
-        num.push(['c', 'd'])
+        num.push(*['c', 'd'])
         self.assertEqual('d', num.pop())
         self.assertEqual('c', num.pop())
         self.assertEqual(['1', '2', '4', 'a', 'b'], num.members)
@@ -95,8 +95,8 @@ class ListTestCase(unittest.TestCase):
         self.assertEqual(['E', 'D', 'C', 'B', 'A'], alpha.members)
 
     def test_pop_onto(self):
-        a = ListModel('alpha')
-        b = ListModel('beta')
+        a = ListModel('alpha', valueparse=hbom.IntegerField)
+        b = ListModel('beta', valueparse=hbom.IntegerField)
         a.extend(range(10))
 
         # test pop_onto
@@ -158,7 +158,7 @@ class SetTestCase(unittest.TestCase):
         fruits.add('apples')
         fruits.add('oranges')
         fruits.add('bananas', 'tomatoes')
-        fruits.add(['strawberries', 'blackberries'])
+        fruits.add(*['strawberries', 'blackberries'])
 
         self.assertEqual(
             {'apples', 'oranges', 'bananas',
@@ -167,7 +167,7 @@ class SetTestCase(unittest.TestCase):
         # remove
         fruits.remove('apples')
         fruits.remove('bananas', 'blackberries')
-        fruits.remove(['tomatoes', 'strawberries'])
+        fruits.remove(*['tomatoes', 'strawberries'])
 
         self.assertEqual({'oranges'}, fruits.all())
 
@@ -235,33 +235,33 @@ class SortedSetTestCase(unittest.TestCase):
         self.assertEqual(zorted.zrange(0, -1), [])
         self.assertEqual(zorted.add('foo', 1), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 1.0)])
+                         [('foo', 1.0)])
         self.assertEqual(zorted.add('foo', 2, xx=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 2.0)])
+                         [('foo', 2.0)])
         self.assertEqual(zorted.add('foo', 3, xx=True, ch=True), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 3.0)])
+                         [('foo', 3.0)])
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 3.0)])
+                         [('foo', 3.0)])
         self.assertEqual(zorted.add('bar', 2, xx=True, ch=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 3.0)])
+                         [('foo', 3.0)])
 
     def test_nx(self):
         zorted = SortedSetModel("tnx")
         self.assertEqual(zorted.add('foo', 1, nx=True), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 1.0)])
+                         [('foo', 1.0)])
         self.assertEqual(zorted.add('foo', 2, nx=True, ch=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 1.0)])
+                         [('foo', 1.0)])
         self.assertEqual(zorted.add('bar', 2, nx=True, ch=True), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 1.0), (b'bar', 2.0)])
+                         [('foo', 1.0), ('bar', 2.0)])
         self.assertEqual(zorted.add('bar', 3, nx=True, ch=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [(b'foo', 1.0), (b'bar', 2.0)])
+                         [('foo', 1.0), ('bar', 2.0)])
 
     def test_pipelined_zadd_options(self):
         pipe = hbom.Pipeline()
@@ -272,7 +272,7 @@ class SortedSetTestCase(unittest.TestCase):
         zorted.zadd('bar', 1, xx=True)
         res = zorted.zrange(0, -1, withscores=True)
         pipe.execute()
-        self.assertEqual(res, [(b'foo', 2.0)])
+        self.assertEqual(res, [('foo', 2.0)])
 
 
 class HashModel(hbom.RedisHash):
@@ -294,8 +294,8 @@ class HashTestCase(unittest.TestCase):
         h.hset('real_name', "Richard Rahl")
 
         pulled = default_redis_connection.hgetall(h.key)
-        self.assertEqual({'name': "Richard Cypher",
-                          'real_name': "Richard Rahl"}, pulled)
+        self.assertEqual({b'name': b"Richard Cypher",
+                          b'real_name': b"Richard Rahl"}, pulled)
 
         self.assertEqual(['name', 'real_name'], h.hkeys())
         self.assertEqual(["Richard Cypher", "Richard Rahl"],
@@ -303,19 +303,19 @@ class HashTestCase(unittest.TestCase):
 
         h.hdel('name')
         pulled = default_redis_connection.hgetall(h.key)
-        self.assertEqual({'real_name': "Richard Rahl"}, pulled)
+        self.assertEqual({b'real_name': b"Richard Rahl"}, pulled)
         self.assertTrue('real_name' in h.hgetall())
         h.dict = {"new_hash": "YEY"}
         self.assertEqual({"new_hash": "YEY"}, h.dict)
 
     def test_delegateable_methods(self):
-        h = HashModel('my_hash')
+        h = HashModel('my_hash', valueparse=hbom.IntegerField)
         h.hincrby('Red', 1)
         h.hincrby('Red', 1)
         h.hincrby('Red', 2)
         self.assertEqual(4, int(h.hget('Red')))
         h.hmset({'Blue': 100, 'Green': 19, 'Yellow': 1024})
-        self.assertEqual(['100', '19'], h.hmget(['Blue', 'Green']))
+        self.assertEqual([100, 19], h.hmget(['Blue', 'Green']))
 
 
 class IndexModel(hbom.RedisIndex):

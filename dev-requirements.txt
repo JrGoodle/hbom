@@ -12,3 +12,4 @@ redis-py-cluster>=1.0.0
 Cython>=0.23.4
 redislite==3.0.271
 redis>=2.10.2
+nose

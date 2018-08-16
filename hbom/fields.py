@@ -5,6 +5,7 @@ from .exceptions import InvalidFieldValue, \
 from future.utils import PY2
 import future.builtins
 import re
+import redpipe
 
 __all__ = '''
 Field
@@ -58,6 +59,8 @@ class Field(object):
     _allowed = ()
 
     __slots__ = 'primary required default model convert attr'.split()
+
+    _redpipe_equivalent = redpipe.TextField
 
     def __init__(self, required=False, default=NULL, primary=False):
         self.primary = primary
@@ -209,6 +212,8 @@ class BooleanField(Field):
     """
     _allowed = bool
 
+    _redpipe_equivalent = redpipe.BooleanField
+
     def __init__(self):
         super(BooleanField, self).__init__(default=False)
 
@@ -230,6 +235,8 @@ class DecimalField(Field):
     """
     _allowed = Decimal
 
+    _redpipe_equivalent = redpipe.FloatField
+
     def __init__(self, required=False, default=NULL):
         """
         don't allow as primary key.
@@ -241,7 +248,7 @@ class DecimalField(Field):
         super(DecimalField, self).__init__(required=required, default=default)
 
     def to_persistence(self, value):
-        return str(value)
+        return value
 
 
 class FloatField(Field):
@@ -258,6 +265,11 @@ class FloatField(Field):
     """
     _allowed = (float, int)
 
+    _redpipe_equivalent = redpipe.FloatField
+
+    def to_persistence(self, value):
+        return value
+
 
 class IntegerField(Field):
     """
@@ -271,6 +283,8 @@ class IntegerField(Field):
             col = Integer()
     """
     _allowed = int
+
+    _redpipe_equivalent = redpipe.IntegerField
 
     def to_persistence(self, value):
         return int(float(value))
@@ -290,6 +304,8 @@ class JsonField(Field):
     """
     _allowed = (dict, list, tuple, set)
 
+    _redpipe_equivalent = redpipe.DictField
+
     def to_persistence(self, value):
         return json.dumps(value)
 
@@ -301,6 +317,8 @@ class JsonField(Field):
 
 class ListField(JsonField):
     _allowed = list
+
+    _redpipe_equivalent = redpipe.ListField
 
     def from_persistence(self, value):
         if value is None:
@@ -344,13 +362,13 @@ class StringField(Field):
     PATTERN = re.compile('^([ -~]+)?$')
 
     def from_persistence(self, value):
-        return None if value is None else unicode(value.decode('utf-8'))
+        return None if value is None else value
 
     def to_persistence(self, value):
         try:
             coerced = unicode(value)
             if coerced == value and self.PATTERN.match(coerced):
-                return coerced.encode('utf-8')
+                return coerced
         except (UnicodeError, TypeError):
             pass
 
@@ -379,9 +397,9 @@ class TextField(Field):
     def to_persistence(self, value):
         try:
             coerced = unicode(value)
-            return coerced.encode('utf-8')
+            return coerced
         except (UnicodeError, TypeError):
             raise InvalidFieldValue('not ascii')
 
     def from_persistence(self, value):
-        return None if value is None else unicode(value.decode('utf-8'))
+        return None if value is None else value

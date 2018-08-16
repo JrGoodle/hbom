@@ -5,6 +5,7 @@ from builtins import object
 import hashlib
 import re
 import redpipe
+from . import fields as hbom_fields
 
 # 3rd-party (optional)
 try:
@@ -58,6 +59,17 @@ def _parse_values(values):
     return values
 
 
+def create_core(parent, conn=None, valparse=hbom_fields.TextField, cls_fields=None):
+    class core(parent):
+        keyspace = None
+        connection = conn
+        valueparse = valparse._redpipe_equivalent
+        if cls_fields:
+            fields = {k: v._redpipe_equivalent for k, v in cls_fields.items()}
+
+    return core
+
+
 class RedisContainer(object):
     """
     Base class for all containers. This class should not
@@ -73,6 +85,7 @@ class RedisContainer(object):
         self._key = key
         self.key = self.db_key(self._key)
         self._pipe = pipe
+        self._core = None
 
     @property
     def pipe(self):
@@ -109,8 +122,7 @@ class RedisContainer(object):
         set([])
 
         """
-        with self.pipe as p:
-            return p.delete(self.key)
+        return self._core.delete(self.key)
 
     clear = delete
 
@@ -135,33 +147,27 @@ class RedisContainer(object):
         """
         if time is None:
             time = EXPIRE_DEFAULT
-        with self.pipe as p:
-            return p.expire(self.key, time)
+        return self._core.expire(self.key, time)
 
     set_expire = expire
 
     def exists(self):
-        with self.pipe as p:
-            return p.exists(self.key)
+        return self._core.exists(self.key)
 
     def eval(self, script, *args):
-        with self.pipe as p:
-            return p.eval(script, 1, self.key, *args)
+        return self._core.eval(script, 1, self.key, *args)
 
     def dump(self):
-        with self.pipe as p:
-            return p.dump(self.key)
+        return self._core.dump(self.key)
 
     def restore(self, data, pttl=0):
         return self.eval(lua_restorenx, pttl, data)
 
     def ttl(self):
-        with self.pipe as p:
-            return p.ttl(self.key)
+        return self._core.ttl(self.key)
 
     def persist(self):
-        with self.pipe as p:
-            return p.persist(self.key)
+        return self._core.persist(self.key)
 
     def object(self, subcommand):
         return self.eval(lua_object_info, subcommand)
@@ -224,6 +230,11 @@ class RedisContainer(object):
 
 
 class RedisString(RedisContainer):
+
+    def __init__(self, key, pipe=None, valueparse=hbom_fields.TextField):
+        super(RedisString, self).__init__(key, pipe)
+        self._core = create_core(redpipe.String, self._db, valparse=valueparse)(pipe=self._pipe)
+
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
@@ -231,39 +242,34 @@ class RedisString(RedisContainer):
         """
         set the value as a string in the key
         """
-        with self.pipe as p:
-            return p.get(self.key)
+        return self._core.get(self.key)
 
     def set(self, value):
         """
         set the value as a string in the key
         :param value:
         """
-        with self.pipe as p:
-            return p.set(self.key, value)
+        return self._core.set(self.key, value)
 
     def incr(self):
         """
         increment the value for key by 1
         """
-        with self.pipe as p:
-            return p.incr(self.key)
+        return self._core.incr(self.key)
 
     def incrby(self, value=1):
         """
         increment the value for key by value: int
         :param value:
         """
-        with self.pipe as p:
-            return p.incrby(self.key, value)
+        return self._core.incr(self.key, value)
 
     def incrbyfloat(self, value=1.0):
         """
         increment the value for key by value: float
         :param value:
         """
-        with self.pipe as p:
-            return p.incrbyfloat(self.key, value)
+        return self._core.incrbyfloat(self.key, value)
 
     def setnx(self, value):
         """
@@ -271,8 +277,7 @@ class RedisString(RedisContainer):
         :param value:
         :return:
         """
-        with self.pipe as p:
-            return p.setnx(self.key, value)
+        return self._core.setnx(self.key, value)
 
 
 class RedisSet(RedisContainer):
@@ -281,6 +286,10 @@ class RedisSet(RedisContainer):
 
     This class represent a Set in redis.
     """
+
+    def __init__(self, key, pipe=None, valueparse=hbom_fields.TextField):
+        super(RedisSet, self).__init__(key, pipe)
+        self._core = create_core(redpipe.Set, self._db, valparse=valueparse)(pipe=self._pipe)
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
@@ -303,8 +312,7 @@ class RedisSet(RedisContainer):
         > s.clear()
 
         """
-        with self.pipe as p:
-            return p.sadd(self.key, *_parse_values(values))
+        return self._core.sadd(self.key, values)
 
     def srem(self, *values):
         """
@@ -321,8 +329,7 @@ class RedisSet(RedisContainer):
         > s.clear()
 
         """
-        with self.pipe as p:
-            return p.srem(self.key, *_parse_values(values))
+        return self._core.srem(self.key, *values)
 
     def spop(self):
         """
@@ -339,12 +346,10 @@ class RedisSet(RedisContainer):
         set([])
 
         """
-        with self.pipe as p:
-            return p.spop(self.key)
+        return self._core.spop(self.key)
 
     def all(self):
-        with self.pipe as p:
-            return p.smembers(self.key)
+        return self._core.smembers(self.key)
 
     members = property(all)
 
@@ -355,8 +360,7 @@ class RedisSet(RedisContainer):
         :rtype: String containing the cardinality.
 
         """
-        with self.pipe as p:
-            return p.scard(self.key)
+        return self._core.scard(self.key)
 
     def sismember(self, value):
         """
@@ -364,8 +368,7 @@ class RedisSet(RedisContainer):
         :param value:
 
         """
-        with self.pipe as p:
-            return p.sismember(self.key, value)
+        return self._core.sismember(self.key, value)
 
     def srandmember(self):
         """
@@ -378,8 +381,7 @@ class RedisSet(RedisContainer):
         '...'
         > # 'a', 'b' or 'c'
         """
-        with self.pipe as p:
-            return p.srandmember(self.key)
+        return self._core.srandmember(self.key)
 
     add = sadd
     pop = spop
@@ -390,6 +392,10 @@ class RedisList(RedisContainer):
     """
     This class represent a list object as seen in redis.
     """
+
+    def __init__(self, key, pipe=None, valueparse=hbom_fields.TextField):
+        super(RedisList, self).__init__(key, pipe)
+        self._core = create_core(redpipe.List, self._db, valparse=valueparse)(pipe=self._pipe)
 
     def all(self):
         """
@@ -404,8 +410,7 @@ class RedisList(RedisContainer):
         """
         Returns the length of the list.
         """
-        with self.pipe as p:
-            return p.llen(self.key)
+        return self._core.llen(self.key)
 
     def lrange(self, start, stop):
         """
@@ -422,8 +427,7 @@ class RedisList(RedisContainer):
         > l.clear()
 
         """
-        with self.pipe as p:
-            return p.lrange(self.key, start, stop)
+        return self._core.lrange(self.key, start, stop)
 
     def lpush(self, *values):
         """
@@ -437,8 +441,7 @@ class RedisList(RedisContainer):
         2L
         > l.clear()
         """
-        with self.pipe as p:
-            return p.lpush(self.key, *_parse_values(values))
+        return self._core.lpush(self.key, *values)
 
     def rpush(self, *values):
         """
@@ -456,8 +459,7 @@ class RedisList(RedisContainer):
         ['b', 'a', 'c', 'd']
         > l.clear()
         """
-        with self.pipe as p:
-            return p.rpush(self.key, *_parse_values(values))
+        return self._core.rpush(self.key, *values)
 
     def extend(self, iterable):
         """
@@ -482,8 +484,7 @@ class RedisList(RedisContainer):
         :return: the popped value.
 
         """
-        with self.pipe as p:
-            return p.lpop(self.key)
+        return self._core.lpop(self.key)
 
     def rpop(self):
         """
@@ -491,8 +492,7 @@ class RedisList(RedisContainer):
 
         :return: the popped value.
         """
-        with self.pipe as p:
-            return p.rpop(self.key)
+        return self._core.rpop(self.key)
 
     def rpoplpush(self, key):
         """
@@ -513,8 +513,7 @@ class RedisList(RedisContainer):
         > l.clear()
         > l2.clear()
         """
-        with self.pipe as p:
-            return p.rpoplpush(self.key, key)
+        return self._core.rpoplpush(self.key, key)
 
     def lrem(self, value, num=1):
         """
@@ -524,8 +523,7 @@ class RedisList(RedisContainer):
         :return: 1 if the value has been removed, 0 otherwise
         if you see an error here, did you use redis.StrictRedis()?
         """
-        with self.pipe as p:
-            return p.lrem(self.key, num, value)
+        return self._core.lrem(self.key, value, num)
 
     def reverse(self):
         """
@@ -546,8 +544,7 @@ class RedisList(RedisContainer):
         :param end:
         :return: None
         """
-        with self.pipe as p:
-            return p.ltrim(self.key, start, end)
+        return self._core.ltrim(self.key, start, end)
 
     def lindex(self, idx):
         """
@@ -556,8 +553,7 @@ class RedisList(RedisContainer):
         :param idx: the index to fetch the value.
         :return: the value or None if out of range.
         """
-        with self.pipe as p:
-            return p.lindex(self.key, idx)
+        return self._core.lindex(self.key, idx)
 
     def lset(self, idx, value=0):
         """
@@ -577,8 +573,7 @@ class RedisList(RedisContainer):
         > l.clear()
 
         """
-        with self.pipe as p:
-            return p.lset(self.key, idx, value)
+        return self._core.lset(self.key, idx, value)
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
@@ -600,6 +595,10 @@ class RedisSortedSet(RedisContainer):
     Use it if you want to arrange your set in any order.
 
     """
+
+    def __init__(self, key, pipe=None, valueparse=hbom_fields.TextField):
+        super(RedisSortedSet, self).__init__(key, pipe)
+        self._core = create_core(redpipe.SortedSet, self._db, valparse=valueparse)(pipe=self._pipe)
 
     @property
     def members(self):
@@ -763,8 +762,7 @@ class RedisSortedSet(RedisContainer):
         []
         > s.clear()
         """
-        with self.pipe as p:
-            return p.zrem(self.key, *_parse_values(values))
+        return self._core.zrem(self.key, *values)
 
     def zincrby(self, att, value=1):
         """
@@ -781,8 +779,7 @@ class RedisSortedSet(RedisContainer):
         20.0
         > s.clear()
         """
-        with self.pipe as p:
-            return p.zincrby(self.key, att, value)
+        return self._core.zincrby(self.key, att, value)
 
     def zrevrank(self, member):
         """
@@ -798,8 +795,7 @@ class RedisSortedSet(RedisContainer):
         > s.clear()
         :param member:
         """
-        with self.pipe as p:
-            return p.zrevrank(self.key, member)
+        return self._core.zrevrank(self.key, member)
 
     def zrange(self, start, end, **kwargs):
         """
@@ -822,8 +818,7 @@ class RedisSortedSet(RedisContainer):
         [('b', 20.0), ('c', 30.0)]
         > s.clear()
         """
-        with self.pipe as p:
-            return p.zrange(self.key, start, end, **kwargs)
+        return self._core.zrange(self.key, start, end, **kwargs)
 
     def zrevrange(self, start, end, **kwargs):
         """
@@ -846,8 +841,7 @@ class RedisSortedSet(RedisContainer):
         :param start:
         :param start:
         """
-        with self.pipe as p:
-            return p.zrevrange(self.key, start, end, **kwargs)
+        return self._core.zrevrange(self.key, start, end, **kwargs)
 
     # noinspection PyShadowingBuiltins
     def zrangebyscore(self, min, max, **kwargs):
@@ -868,8 +862,7 @@ class RedisSortedSet(RedisContainer):
         :param max: int
         :param kwargs: dict
         """
-        with self.pipe as p:
-            return p.zrangebyscore(self.key, min, max, **kwargs)
+        return self._core.zrangebyscore(self.key, min, max, **kwargs)
 
     # noinspection PyShadowingBuiltins
     def zrevrangebyscore(self, max, min, **kwargs):
@@ -890,8 +883,7 @@ class RedisSortedSet(RedisContainer):
         :param min:
         :param max:
         """
-        with self.pipe as p:
-            return p.zrevrangebyscore(self.key, max, min, **kwargs)
+        return self._core.zrevrangebyscore(self.key, max, min, **kwargs)
 
     def zcard(self):
         """
@@ -908,8 +900,7 @@ class RedisSortedSet(RedisContainer):
         3
         > s.clear()
         """
-        with self.pipe as p:
-            return p.zcard(self.key)
+        return self._core.zcard(self.key)
 
     def zscore(self, elem):
         """
@@ -923,8 +914,7 @@ class RedisSortedSet(RedisContainer):
         > s.clear()
         :param elem:
         """
-        with self.pipe as p:
-            return p.zscore(self.key, elem)
+        return self._core.zscore(self.key, elem)
 
     def zremrangebyrank(self, start, stop):
         """
@@ -948,8 +938,7 @@ class RedisSortedSet(RedisContainer):
         ['a']
         > s.clear()
         """
-        with self.pipe as p:
-            return p.zremrangebyrank(self.key, start, stop)
+        return self._core.zremrangebyrank(self.key, start, stop)
 
     def zremrangebyscore(self, min_value, max_value):
         """
@@ -973,8 +962,7 @@ class RedisSortedSet(RedisContainer):
         ['c']
         > s.clear()
         """
-        with self.pipe as p:
-            return p.zremrangebyscore(self.key, min_value, max_value)
+        return self._core.zremrangebyscore(self.key, min_value, max_value)
 
     def zrank(self, elem):
         """
@@ -988,16 +976,14 @@ class RedisSortedSet(RedisContainer):
         > s.clear()
         :param elem:
         """
-        with self.pipe as p:
-            return p.zrank(self.key, elem)
+        return self._core.zrank(self.key, elem)
 
     def zcount(self, min, max):
         """
         Returns the number of elements in the sorted set at key ``name`` with
         a score between ``min`` and ``max``.
         """
-        with self.pipe as p:
-            return p.zcount(self.key, min, max)
+        return self._core.zcount(self.key, min, max)
 
     def eq(self, value):
         """
@@ -1015,6 +1001,11 @@ class RedisSortedSet(RedisContainer):
 
 
 class RedisHash(RedisContainer):
+    def __init__(self, key, pipe=None, valueparse=hbom_fields.TextField, fields=None):
+        super(RedisHash, self).__init__(key, pipe)
+        self._core = create_core(redpipe.Hash, self._db,
+                                 valparse=valueparse, cls_fields=fields)(pipe=self._pipe)
+
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
@@ -1022,8 +1013,7 @@ class RedisHash(RedisContainer):
         """
         Returns the number of elements in the Hash.
         """
-        with self.pipe as p:
-            return p.hlen(self.key)
+        return self._core.hlen(self.key)
 
     def hset(self, member, value):
         """
@@ -1040,8 +1030,7 @@ class RedisHash(RedisContainer):
         1L
         > h.clear()
         """
-        with self.pipe as p:
-            return p.hset(self.key, member, value)
+        return self._core.hset(self.key, member, value)
 
     def hsetnx(self, member, value):
         """
@@ -1058,8 +1047,7 @@ class RedisHash(RedisContainer):
         1L
         > h.clear()
         """
-        with self.pipe as p:
-            return p.hsetnx(self.key, member, value)
+        return self._core.hsetnx(self.key, member, value)
 
     def hdel(self, *members):
         """
@@ -1075,15 +1063,13 @@ class RedisHash(RedisContainer):
         1
         > h.clear()
         """
-        with self.pipe as p:
-            return p.hdel(self.key, *_parse_values(members))
+        return self._core.hdel(self.key, *members)
 
     def hkeys(self):
         """
         Returns all fields name in the Hash
         """
-        with self.pipe as p:
-            return p.hkeys(self.key)
+        return self._core.hkeys(self.key)
 
     def hgetall(self):
         """
@@ -1091,8 +1077,7 @@ class RedisHash(RedisContainer):
 
         :rtype: dict
         """
-        with self.pipe as p:
-            return p.hgetall(self.key)
+        return self._core.hgetall(self.key)
 
     def hvals(self):
         """
@@ -1100,24 +1085,21 @@ class RedisHash(RedisContainer):
 
         :rtype: list
         """
-        with self.pipe as p:
-            return p.hvals(self.key)
+        return self._core.hvals(self.key)
 
     def hget(self, field):
         """
         Returns the value stored in the field, None if the field doesn't exist.
         :param field:
         """
-        with self.pipe as p:
-            return p.hget(self.key, field)
+        return self._core.hget(self.key, field)
 
     def hexists(self, field):
         """
         Returns ``True`` if the field exists, ``False`` otherwise.
         :param field:
         """
-        with self.pipe as p:
-            return p.hexists(self.key, field)
+        return self._core.hexists(self.key, field)
 
     def hincrby(self, field, increment=1):
         """
@@ -1133,16 +1115,15 @@ class RedisHash(RedisContainer):
         12L
         > h.clear()
         """
-        with self.pipe as p:
-            return p.hincrby(self.key, field, increment)
+        return self._core.hincrby(self.key, field, increment)
 
     def hmget(self, fields):
         """
         Returns the values stored in the fields.
         :param fields:
         """
-        with self.pipe as p:
-            return p.hmget(self.key, fields)
+        redpipe_fields = [k for k in fields]
+        return self._core.hmget(self.key, redpipe_fields)
 
     def hmset(self, mapping):
         """
@@ -1150,12 +1131,15 @@ class RedisHash(RedisContainer):
 
         :param mapping: a dict with keys and values
         """
-        with self.pipe as p:
-            return p.hmset(self.key, mapping)
+        return self._core.hmset(self.key, mapping)
 
 
 class RedisDistributedHash(RedisContainer):
     _shards = 1000
+
+    def __init__(self, key, pipe=None, valueparse=hbom_fields.TextField):
+        super(RedisDistributedHash, self).__init__(key, pipe)
+        self._core = create_core(redpipe.Hash, self._db, valparse=valueparse)(pipe=self._pipe)
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
@@ -1163,15 +1147,16 @@ class RedisDistributedHash(RedisContainer):
     def redis_sharded_key(self, member):
         return "%s:%s" % (
             self.key,
-            int(hashlib.md5(member).hexdigest(), 16) % self._shards)
-        # int(hashlib.md5(member.encode('utf-8')).hexdigest(), 16) % self._shards)
+            int(hashlib.md5(member if isinstance(member, bytes)
+                else member.encode('utf-8')).hexdigest(), 16) % self._shards)
 
     def hlen(self):
         """
         Returns the number of elements in the Hash.
         """
         with self.pipe as p:
-            data = [p.hlen("%s:%s" % (self.key, i)) for i in range(0, self._shards)]
+            data = [redpipe.Hash(pipe=p).hlen("%s:%s" % (self.key, i))
+                    for i in range(0, self._shards)]
             f = redpipe.Future()
 
             def cb():
@@ -1195,8 +1180,7 @@ class RedisDistributedHash(RedisContainer):
         1L
         > h.clear()
         """
-        with self.pipe as p:
-            return p.hset(self.redis_sharded_key(member), member, value)
+        return self._core.hset(self.redis_sharded_key(member), member, value)
 
     def hdel(self, *members):
         """
@@ -1214,7 +1198,7 @@ class RedisDistributedHash(RedisContainer):
         """
 
         with self.pipe as p:
-            data = [p.hdel(self.redis_sharded_key(member), member)
+            data = [redpipe.Hash(pipe=p).hdel(self.redis_sharded_key(member), member)
                     for member in _parse_values(members)]
             f = redpipe.Future()
 
@@ -1229,16 +1213,14 @@ class RedisDistributedHash(RedisContainer):
         Returns the value stored in the field, None if the field doesn't exist.
         :param field:
         """
-        with self.pipe as p:
-            return p.hget(self.redis_sharded_key(field), field)
+        return self._core.hget(self.redis_sharded_key(field), field)
 
     def hexists(self, field):
         """
         Returns ``True`` if the field exists, ``False`` otherwise.
         :param field:
         """
-        with self.pipe as p:
-            return p.hexists(self.redis_sharded_key(field), field)
+        return self._core.hexists(self.redis_sharded_key(field), field)
 
     def hincrby(self, field, increment=1):
         """
@@ -1254,8 +1236,7 @@ class RedisDistributedHash(RedisContainer):
         12L
         > h.clear()
         """
-        with self.pipe as p:
-            return p.hincrby(self.redis_sharded_key(field), field, increment)
+        return self._core.hincrby(self.redis_sharded_key(field), field, increment)
 
 
 class RedisIndex(RedisHash):
@@ -1266,8 +1247,7 @@ class RedisIndex(RedisHash):
     @classmethod
     def shard(cls, key, pipe=None):
         shard_ct = cls.shard_count()
-        # keyhash = hashlib.md5(key.encode('utf-8')).hexdigest()
-        keyhash = hashlib.md5(key).hexdigest()
+        keyhash = hashlib.md5(key if isinstance(key, bytes) else key.encode('utf-8')).hexdigest()
         return cls(int(keyhash, 16) % shard_ct, pipe=pipe)
 
     @classmethod
@@ -1310,13 +1290,13 @@ class RedisIndex(RedisHash):
         for key in keys:
             cursor = 0
             while True:
-                with redpipe.pipeline(name=cls._db, autoexec=True) as pipe:
-                    res = pipe.hscan(key, cursor=cursor, count=500)
+                with redpipe.pipeline(name=cls._db, autoexec=True) as p:
+                    res = p.hscan(key, cursor=cursor, count=500)
 
                 cursor, elements = res
                 if elements:
                     for k, v in elements.items():
-                        yield k, v
+                        yield k.decode('utf-8'), v.decode('utf-8')
 
                 if cursor == 0:
                     break
@@ -1329,8 +1309,8 @@ class RedisObject(object):
         # we can save as long as the fields match.
         # this allows us to use wrapper classes that
         # implement the same interface.
-        if getattr(instance, '_fields') != getattr(
-                getattr(cls, 'definition'), '_fields'):
+        fields = getattr(getattr(cls, 'definition'), '_fields')
+        if getattr(instance, '_fields') != fields:
             raise RuntimeError(
                 'incorrect instance type for %s:save' % cls.__name__)
 
@@ -1340,7 +1320,7 @@ class RedisObject(object):
             return 0
         p = Pipeline() if pipe is None else pipe
         _pk = instance.primary_key()
-        s = getattr(cls, 'storage')(_pk, pipe=p)
+        s = getattr(cls, 'storage')(_pk, pipe=p, fields=fields)
 
         # apply remove to the record
         remove = [k for k, v in state.items() if v is None]
@@ -1362,7 +1342,7 @@ class RedisObject(object):
     @classmethod
     def delete(cls, _pk, pipe=None):
         fields = getattr(getattr(cls, 'definition'), '_fields')
-        res = getattr(cls, 'storage')(_pk, pipe=pipe).hdel(*fields)
+        res = getattr(cls, 'storage')(_pk, pipe=pipe, fields=fields).hdel(*fields)
         return res
 
     @classmethod
@@ -1384,7 +1364,7 @@ class RedisObject(object):
 
             def prep(pk):
                 ref = definition(_ref=pk, _parent=cls)
-                s = storage(pk, pipe=p)
+                s = storage(pk, pipe=p, fields=fields)
                 r = s.hmget(fields)
 
                 def set_data():
@@ -1425,7 +1405,7 @@ class RedisObject(object):
         _pk = ref.primary_key()
         definition = ref.__class__
         fields = getattr(definition, '_fields')
-        s = getattr(cls, 'storage')(_pk, pipe=pipe)
+        s = getattr(cls, 'storage')(_pk, pipe=pipe, fields=fields)
         r = s.hmget(fields)
 
         def set_data():
@@ -1491,7 +1471,7 @@ class RedisColdStorageObject(RedisObject):
                     freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
 
                     def _load(k, v):
-                        s = storage(k, pipe=pp)
+                        s = storage(k, pipe=pp, fields=fields)
                         s.persist()
                         s.restore(v)
                         return s.hmget(fields)
@@ -1524,7 +1504,7 @@ class RedisColdStorageObject(RedisObject):
         definition = ref.__class__
         fields = getattr(definition, '_fields')
         storage = getattr(cls, 'storage')
-        s = storage(_pk, pipe=pipe)
+        s = storage(_pk, pipe=pipe, fields=fields)
         cold_storage = getattr(cls, 'coldstorage')
         missing_cache = False
         frozen_key_cache = "%s__xx" % s.key
@@ -1550,7 +1530,7 @@ class RedisColdStorageObject(RedisObject):
 
             with Pipeline(name=getattr(storage, '_db')) as p:
 
-                s = storage(_pk, pipe=p)
+                s = storage(_pk, pipe=p, fields=fields)
 
                 if frozen is None:
                     freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
