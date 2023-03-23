@@ -76,7 +76,7 @@ setup(
         'python-coveralls',
         'line_profiler',
         'python-coveralls',
-        'Cython>=0.23.4'
+        'Cython>=0.23.4',
         'redislite>=3.0.271',
         'redis-py-cluster>=1.3.0'
     ],
